@@ -1,0 +1,61 @@
+extends layout
+
+block content
+ body
+     .container
+       .row.login
+               .col
+                       .card.card-warning#logincard
+                           .card-header Kullanici Adi Giriniz
+                           .card-body
+                               form#kullanicigiris
+                                   #kullanicigroup.input-group
+                                       input#kullaniciadi.form-control(type='text', placeholder='Kullanici adi giriniz')
+                                       span.input-group-btn
+                                           button.btn.btn-info(type='submit') giris
+
+         .row.chatbox
+         .col
+           #icerik.card
+             .card-header#baslik
+             .card-body
+                 .row
+                    .col-6.divmesaj
+                        ul#Mesajlasma.form-control.messages
+                        form#girdi
+                          group.input-group
+                            input#yazi.form-control.col-auto(type='text')
+                            span.input-group-btn
+                                button.btn.btn-info(type='submit') gonder
+                    .col-3
+                        .card
+                            .card-header Kullanicilar
+                            .card-body
+                                .row
+                                    .col
+                                        #list-tab.list-group(role='tablist')
+                    .col-3
+                        .card
+                            .card-header Gruplar
+                            .card-body
+                                .row
+                                    .col
+                                        .list-group(role='tablist')
+                                            li.list-group-item.list-group-item-warning Müzik
+                                            li.list-group-item.list-group-item-warning Film
+                                            li.list-group-item.list-group-item-warning Sanat
+                                            li.list-group-item.list-group-item-warning Teknoloji
+
+
+
+
+
+
+
+
+    script(src='https://code.jquery.com/jquery-3.2.1.js')
+    script(src='https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js')
+    script(src='https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js')
+    script(src='/socket.io-client/dist/socket.io.js')
+    script(src='/javascripts/chatscript.js')
+

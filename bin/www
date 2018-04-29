@@ -1,0 +1,291 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('socketmesaj:server');
+var http = require('http');
+var mongoose = require('mongoose');
+
+var kisi = require('../models/kisi');
+var chat = require('../models/chat');
+
+mongoose.connect('mongodb://localhost/Mesajlasma', function (err) {
+
+    if (err) throw err;
+
+    console.log('www dosyasından veritabanına bağlanıldı');
+});
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || '3000');
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+var io = app.sockio;
+io.listen(server);
+
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+
+
+io.on('connection', function(socket) {
+    console.log('Kullanici socket sunucuya bağlandı.');
+    socket.on('chat message', function (data, callback) {
+        var msg = data.trim();
+        if (msg.substr(0, 3) === '/w ') {
+
+            msg = msg.substr(3);
+            var ind = msg.indexOf(' ');
+            if (ind !== -1) {
+                var name = msg.substr(0, ind);
+                msg = msg.substr(ind + 1);
+                kisi.findOne({kullaniciAdi: name}, function (err, mesajalankisi) {
+                    if (err) throw err;
+                    if (mesajalankisi == null) {
+                        callback('/e Boyle bir kullanici yok');
+                    }
+                    else {
+                        var chatgirdi = new chat({
+                            _id: new mongoose.Types.ObjectId,
+                            gonderenkullanici:socket.nickname,
+                            alankullanici:mesajalankisi.kullaniciAdi,
+                            olusturulmaTarihi:Date.now(),
+                            mesaj:msg
+                        });
+                        chatgirdi.save();
+                        io.to(mesajalankisi.socketid).emit('private message', {
+                            kullaniciadi: socket.nickname,
+                            mesaj: msg
+
+                        });
+                        callback(false);
+                    }
+                });
+            }
+            else{
+                callback('/e Hata lütfen tekrar giriniz')
+            }
+        }
+        else if (msg.substr(0, 3) === '/g ') {
+            msg = msg.substr(3);
+            var ind = msg.indexOf(' ');
+            if (ind !== -1) {
+                var group = msg.substr(0, ind);
+                msg = msg.substr(ind + 1);
+                if (group == 'join') {
+                    if (msg != 'Müzik' && msg != 'Sanat'&& msg != 'Teknoloji' && msg != 'Müzik') {
+                        callback('/e Gözüken gruplar dışında üye olunamaz veya çıkılamaz');
+                    }
+                    kisi.findOne({kullaniciAdi: socket.nickname,"groups":{"$in":[msg]}}, function (err, gonderilengroup) {
+                        if (err) throw err;
+                        if (gonderilengroup == null) {
+                            console.log(socket.nickname+'kullanicisi '+msg+'grubuna üye oldu');
+                            callback('kullanici gruba üye oldu');
+                            socket.join(msg);
+                            kisi.findOneAndUpdate({kullaniciAdi: socket.nickname},{"$push":{"groups":msg}},function (err,groupdegistir) {
+                                console.log(socket.nickname+'kullanicisi '+msg+'grubuna üyeliği veri tabanına kaydedildi');
+                            });
+                        }
+                        else {
+                            callback('/e kullanici zaten bu gruba üye');
+                        }
+                    });
+                }
+                else if (group == 'quit') {
+                    if (msg != 'Müzik' && msg != 'Sanat'&& msg != 'Teknoloji' && msg != 'Müzik') {
+                        callback('/e Gözüken gruplar dışında üye olunamaz veya çıkılamaz');
+                    }
+                    kisi.findOne({kullaniciAdi: socket.nickname,"groups":{"$in":[msg]}}, function (err, gonderilengroup) {
+                        if (err) throw err;
+                        if (gonderilengroup == null) {
+                            callback('/e kullanici zaten bu gruba üye değil');
+                        }
+                        else {
+                            callback('kullanici gruba üyelikten çıkarıldı');
+                            console.log(socket.nickname+'kullanicisi '+msg+'grubuna üyelikten cikarildi');
+                            socket.leave(msg);
+                            kisi.findOneAndUpdate({kullaniciAdi: socket.nickname},{"$pull":{"groups":msg}},function (err,groupdegistir) {
+                                if (err) throw err;
+                                console.log(socket.nickname+'kullanicisi '+msg+'grubuna üyeliği veri tabanından silindi');
+                            });
+                        }
+                    });
+                }
+                else {
+                    kisi.findOne({
+                        kullaniciAdi: socket.nickname,"groups":{"$in":[group]}}, function (err, gonderilengroup) {
+                        if (err) throw err;
+                        if (gonderilengroup == null) {
+                            callback('/e kullanici böyle bir gruba üye değil');
+                        }
+                        else {
+                            io.to(group).emit('group message', {
+                                grupismi: group,
+                                kullaniciadi: socket.nickname,
+                                mesaj: msg
+                            });
+                            console.log(socket.nickname+'kullanicisi '+group+' grubuna'+msg+' mesajını gönderdi');
+                            var chatgirdi = new chat({
+                                _id: new mongoose.Types.ObjectId,
+                                gonderenkullanici: socket.nickname,
+                                alankullanici: 'group' + group,
+                                olusturulmaTarihi: Date.now(),
+                                mesaj: msg
+                            });
+                            chatgirdi.save();
+                        }
+                    });
+                }
+            }
+        }
+         else {
+                io.emit('all message', {
+                    kullaniciadi: socket.nickname,
+                    mesaj: data
+
+                });
+            var chatgirdi = new chat({
+                _id: new mongoose.Types.ObjectId,
+                gonderenkullanici:socket.nickname,
+                alankullanici:'all',
+                olusturulmaTarihi:Date.now(),
+                mesaj:msg
+            });
+            chatgirdi.save();
+            }
+
+    });
+    socket.on('new user', function (msg,callback) {
+        socket.nickname=msg;
+        kisi.findOne({kullaniciAdi:msg}, function(err, girdi) {
+            if (err)throw err;
+            if (girdi==null){
+                var yenikisi = new kisi({
+                    _id: new mongoose.Types.ObjectId,
+                    kullaniciAdi:msg,
+                    socketid:socket.id,
+                    online:true,
+                    olusturulmaTarihi:Date.now()
+
+
+                });
+                yenikisi.save(function (err) {
+                    if(err) throw err;
+                    console.log('Yeni bir kullanıcı giriş yaptı--->'+yenikisi.kullaniciAdi);
+                });
+                callback(true);;
+                io.emit('new user list',yenikisi.kullaniciAdi);
+            }
+            else {
+                if (girdi.online == false) {
+                    kisi.findByIdAndUpdate(girdi._id,{online:true,socketid:socket.id}, function(err, degisenkisi) {
+                        if (err) throw err;
+                        console.log('Daha önceki bir kullanıcı giriş yaptı--->' + degisenkisi.kullaniciAdi);
+                        io.emit('change user list',degisenkisi.kullaniciAdi);
+                        // daha önce girmiş kullanıcı odaya üye oluyor
+                        for(i = 0;i<degisenkisi.groups.length;i++){
+                            console.log('daha önce üyeliği olan '+degisenkisi.kullaniciAdi+' '+degisenkisi.groups[i] +'grubuna girerken üye oldu');
+                            socket.join(degisenkisi.groups[i]);
+                        }
+                    });
+                    callback(true);
+
+
+                }
+                else
+                {
+                    console.log(msg+' kullanicisi Suan Aktif');
+                    callback(false);
+                }
+                }
+        });
+
+    });
+
+    socket.on('disconnect',function () {
+        kisi.findOneAndUpdate({socketid:socket.id}, { online: false}, function(err, cikankisi) {
+            if (err) throw err;
+            if(cikankisi!==null) {
+                console.log('Kullanıcı çıkış yaptı--->' + cikankisi.kullaniciAdi);
+                io.emit('userdisconnect', cikankisi.kullaniciAdi);
+            }
+        });
+
+    });
+});
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false; 
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}
